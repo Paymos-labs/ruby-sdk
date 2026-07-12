@@ -28,6 +28,6 @@ jobs:
       - run: bundle exec rake check
       - name: Test the built gem in isolation
         run: |
-          gem install --local pkg/paymos-*.gem
+          gem install pkg/paymos-*.gem
           cd /tmp
           ruby -e 'require "paymos"; abort unless Paymos::VERSION'
