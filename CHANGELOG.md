@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.1] - 2026-07-12
+
+- fix(sdk): harden Java and Ruby package validation
+
 ## 1.0.0 - 2026-07-11
 
 - Initial official Paymos Ruby SDK.
