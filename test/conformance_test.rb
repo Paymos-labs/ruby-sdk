@@ -77,7 +77,8 @@ class ConformanceTest < Minitest::Test
     assert_equal 13, actual.length
     assert_equal expected.sort, actual.sort
     assert(calls.all? { |_method, _path, headers, _body| headers['Authorization'].start_with?('HMAC-SHA256 pk:') })
-    assert(calls.all? { |_method, _path, headers, _body| headers['User-Agent'] == 'paymos-ruby/1.0.0' })
+    expected_user_agent = "paymos-ruby/#{Paymos::VERSION}"
+    assert(calls.all? { |_method, _path, headers, _body| headers['User-Agent'] == expected_user_agent })
     assert_equal 'a%2Fb', Paymos::Signing.path_segment('a/b')
   end
 

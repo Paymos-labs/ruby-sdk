@@ -1,6 +1,6 @@
 {
   "source_repository": "shockk73/paymos",
   "source_path": "plugins/ruby-sdk",
-  "source_commit": "75d84483842c7de495e588e14b327287a2e24d1f",
-  "version": "1.0.2"
+  "source_commit": "79cfeeeb0588587c18a2e4ca1850a69bf961af1f",
+  "version": "1.0.3"
 }
