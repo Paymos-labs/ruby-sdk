@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.3] - 2026-07-12
+
+- fix(ruby-sdk): make user agent assertion version aware
+
 ## [1.0.2] - 2026-07-12
 
 - fix(release): align Ruby metadata and retry npm publication
