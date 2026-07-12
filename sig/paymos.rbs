@@ -1,0 +1,202 @@
+module Paymos
+  VERSION: String
+
+  class Error < StandardError
+  end
+
+  class ConfigurationError < Error
+  end
+
+  class SignatureMismatchError < Error
+  end
+
+  class TimestampSkewError < Error
+  end
+
+  class ApiError < Error
+    attr_reader status: Integer
+    attr_reader body: String
+    attr_reader headers: Hash[String, String]
+    attr_reader problem: Hash[String, untyped]?
+
+    def initialize: (Integer status, String body, ?Hash[untyped, untyped] headers) -> void
+    def errors: () -> Array[Hash[String, untyped]]
+    def code: () -> String
+    def field: () -> untyped
+    def detail: () -> String
+    def retry_after_seconds: (?now: Time) -> Integer?
+  end
+
+  class ValidationError < ApiError
+  end
+  class AuthenticationError < ApiError
+  end
+  class NotFoundError < ApiError
+  end
+  class ConflictError < ApiError
+  end
+  class GoneError < ApiError
+  end
+  class RateLimitError < ApiError
+  end
+  class ServerError < ApiError
+  end
+  class UnavailableError < ServerError
+  end
+
+  class Model
+    def []: (String | Symbol name) -> untyped
+    def to_h: () -> Hash[Symbol, untyped]
+  end
+
+  class Order < Model
+    attr_reader external_id: String
+    attr_reader client_id: String?
+    attr_reader amount: String
+    attr_reader currency: String
+    attr_reader network: String?
+  end
+
+  class Transfer < Model
+    attr_reader tx_hash: String
+    attr_reader amount: String
+    attr_reader status: String
+    attr_reader created_at: Integer
+    attr_reader confirmed_at: Integer?
+    attr_reader required_confirmations: Integer?
+    attr_reader estimated_confirmation_at: Integer?
+    attr_reader explorer_url: String?
+  end
+
+  class Payment < Model
+    attr_reader currency: String
+    attr_reader network: String
+    attr_reader chain_id: Integer
+    attr_reader contract_address: String?
+    attr_reader expected: String
+    attr_reader address: String?
+    attr_reader exchange_rate: String?
+    attr_reader paid: String?
+    attr_reader remaining: String?
+    attr_reader fee: String?
+    attr_reader net: String?
+    attr_reader transfers: Array[Transfer]?
+  end
+
+  class Invoice < Model
+    attr_reader invoice_id: String
+    attr_reader project_id: String
+    attr_reader status: String
+    attr_reader is_final: bool
+    attr_reader is_test: bool
+    attr_reader payment_url: String
+    attr_reader order: Order
+    attr_reader payment: Payment?
+    attr_reader created_at: Integer
+    attr_reader updated_at: Integer
+    attr_reader expires_at: Integer?
+    attr_reader completed_at: Integer?
+  end
+
+  class InvoiceListItem < Model
+    attr_reader invoice_id: String
+    attr_reader project_id: String
+    attr_reader external_order_id: String
+    attr_reader client_id: String?
+    attr_reader status: String
+    attr_reader is_final: bool
+    attr_reader is_test: bool
+    attr_reader amount: String
+    attr_reader currency: String
+    attr_reader network: String?
+    attr_reader created_at: Integer
+    attr_reader expires_at: Integer?
+    attr_reader completed_at: Integer?
+  end
+
+  class Withdrawal < Model
+    attr_reader withdrawal_id: String
+    attr_reader external_order_id: String
+    attr_reader status: String
+    attr_reader is_final: bool
+    attr_reader is_test: bool
+    attr_reader amount: String
+    attr_reader fee: String?
+    attr_reader currency: String
+    attr_reader network: String
+    attr_reader destination_address: String
+    attr_reader tx_hash: String?
+    attr_reader explorer_url: String?
+    attr_reader created_at: Integer
+    attr_reader completed_at: Integer?
+    attr_reader failed_at: Integer?
+    attr_reader cancelled_at: Integer?
+  end
+
+  class Balance < Model
+    attr_reader currency: String
+    attr_reader available: String
+  end
+
+  class ServerTime < Model
+    attr_reader server_time: Integer
+  end
+
+  class Page[Item] < Model
+    attr_reader items: Array[Item]
+    attr_reader next_cursor: String?
+  end
+
+  class WebhookEvent[Data] < Model
+    attr_reader event_id: String
+    attr_reader event_type: String
+    attr_reader version: Integer
+    attr_reader occurred_at: Integer
+    attr_reader data: Data
+  end
+
+  class Invoices
+    def create: (project_id: String, amount: String, currency: String, external_order_id: String, ?network: String?, ?allow_multiple_payments: bool?, ?customer_fee_percent: Integer?, ?client_id: String?) -> Invoice
+    def get: (String invoice_id) -> Invoice
+    def list: (?limit: Integer?, ?cursor: String?, ?status: String | Array[String]?, ?external_order_id: String?, ?project_id: String?, ?created_from: Integer?, ?created_to: Integer?) -> Page[InvoiceListItem]
+    def cancel: (String invoice_id, reason: String) -> Invoice
+    def confirm_payment: (String invoice_id, currency: String, network: String) -> Invoice
+    def simulate_payment: (String invoice_id, stage: String) -> Invoice
+    def each: (?max_pages: Integer, **untyped filters) { (InvoiceListItem) -> void } -> void
+         | (?max_pages: Integer, **untyped filters) -> Enumerator[InvoiceListItem, void]
+  end
+
+  class Withdrawals
+    def create: (destination_address: String, network: String, currency: String, amount: String, external_order_id: String) -> Withdrawal
+    def get: (String withdrawal_id) -> Withdrawal
+    def list: (?limit: Integer?, ?cursor: String?, ?status: String | Array[String]?, ?external_order_id: String?, ?created_from: Integer?, ?created_to: Integer?) -> Page[Withdrawal]
+    def cancel: (String withdrawal_id, reason: String) -> Withdrawal
+    def simulate_completion: (String withdrawal_id) -> Withdrawal
+    def each: (?max_pages: Integer, **untyped filters) { (Withdrawal) -> void } -> void
+         | (?max_pages: Integer, **untyped filters) -> Enumerator[Withdrawal, void]
+  end
+
+  class Balances
+    def get: () -> Array[Balance]
+  end
+
+  class System
+    def time: () -> ServerTime
+  end
+
+  class Client
+    attr_reader invoices: Invoices
+    attr_reader withdrawals: Withdrawals
+    attr_reader balances: Balances
+    attr_reader system: System
+
+    def initialize: (api_key: String, api_secret: String, ?base_url: String, ?timeout: Numeric, ?max_retries: Integer, ?base_delay: Numeric, ?transport: untyped, ?clock: untyped, ?sleeper: untyped, ?random: Random) -> void
+  end
+
+  class WebhookVerifier
+    def initialize: (String secret, ?tolerance: Integer, ?clock: untyped) -> void
+    def verify: (String signature_header, String raw_body, ?now: Integer?) -> bool
+    def assert_valid: (String signature_header, String raw_body, ?now: Integer?) -> void
+    def construct_event: (String signature_header, String raw_body, ?now: Integer?) -> WebhookEvent[Hash[String, untyped]]
+  end
+end

@@ -1,0 +1,42 @@
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 3.1
+  SuggestExtensions: false
+
+Layout/LineLength:
+  Max: 120
+
+Metrics/ClassLength:
+  Max: 180
+
+Metrics/MethodLength:
+  Max: 45
+  Exclude:
+    - test/**/*
+
+Metrics/AbcSize:
+  Max: 45
+  Exclude:
+    - test/**/*
+
+Metrics/CyclomaticComplexity:
+  Max: 15
+  Exclude:
+    - test/**/*
+
+Metrics/PerceivedComplexity:
+  Max: 15
+  Exclude:
+    - test/**/*
+
+Metrics/BlockLength:
+  Max: 40
+  Exclude:
+    - test/**/*
+    - Rakefile
+
+Metrics/ParameterLists:
+  Max: 10
+
+Style/Documentation:
+  Enabled: false
