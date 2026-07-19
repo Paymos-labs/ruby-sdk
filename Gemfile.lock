@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    paymos (1.0.3)
+    paymos (1.0.4)
       base64 (~> 0.3)
 
 GEM
