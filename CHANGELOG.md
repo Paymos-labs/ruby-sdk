@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.4] - 2026-07-19
+
+- fix: align SDK problem details semantics
+
 ## [1.0.3] - 2026-07-12
 
 - fix(ruby-sdk): make user agent assertion version aware

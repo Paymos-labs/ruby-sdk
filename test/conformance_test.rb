@@ -35,6 +35,15 @@ class ConformanceTest < Minitest::Test
     refute verifier.verify("#{vector['header']},t=#{vector['timestamp']}", vector['raw_body'], now: vector['now'])
   end
 
+  def test_problem_details_uses_top_level_code
+    vector = CONTRACT.dig('vectors', 'problem_details', 'multi')
+    error = Paymos.api_error(400, JSON.generate(vector))
+
+    assert_equal 'validation_failed', error.code
+    assert_nil error.field
+    assert_equal 'field_required', error.errors.first['code']
+  end
+
   def test_all_contract_routes_are_exposed_and_signed
     calls = []
     transport = lambda do |method, url, headers, body, _timeout|

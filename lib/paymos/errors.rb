@@ -26,20 +26,15 @@ module Paymos
     end
 
     def code
-      first = errors.first
-      value = first.is_a?(Hash) ? first['code'] : problem&.fetch('code', nil)
-      value.to_s
+      problem&.fetch('code', nil).to_s
     end
 
     def field
-      first = errors.first
-      first.is_a?(Hash) ? first['field'] : problem&.fetch('field', nil)
+      problem&.fetch('field', nil)
     end
 
     def detail
       value = problem&.fetch('detail', nil)
-      first = errors.first
-      value ||= first['message'] if first.is_a?(Hash)
       value ||= code unless code.empty?
       value ||= problem&.fetch('title', nil)
       value ||= body unless body.empty?
@@ -60,9 +55,15 @@ module Paymos
 
     def parse_problem(value)
       parsed = value.empty? ? nil : JSON.parse(value)
-      parsed.is_a?(Hash) ? parsed : nil
+      canonical_problem?(parsed) ? parsed : nil
     rescue JSON::ParserError
       nil
+    end
+
+    def canonical_problem?(value)
+      value.is_a?(Hash) && value['type'].is_a?(String) && value['title'].is_a?(String) &&
+        value['status'].is_a?(Integer) && value['status'] == status &&
+        value['detail'].is_a?(String) && value['code'].is_a?(String)
     end
   end
 
