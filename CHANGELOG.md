@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.1] - 2026-08-02
+
+- fix(ecosystem): recover SDK releases
+
 ## [1.1.0] - 2026-07-21
 
 - feat(docs): make the developer surface consumable by LLM agents
