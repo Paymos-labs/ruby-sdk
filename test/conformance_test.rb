@@ -3,8 +3,11 @@
 require 'json'
 require 'minitest/autorun'
 require_relative '../lib/paymos'
+require_relative 'payment_channel_fixtures'
 
 class ConformanceTest < Minitest::Test
+  include PaymentChannelFixtures
+
   CONTRACT = JSON.parse(File.read(File.expand_path('../conformance/contract.json', __dir__)))
 
   def test_signing_and_query_vectors
@@ -17,6 +20,15 @@ class ConformanceTest < Minitest::Test
                  Paymos::Signing.authorization(
                    post['api_key'], post['api_secret'], post['timestamp'], post['method'], post['path'],
                    post['query'], post['body']
+                 )
+
+    # An absent body signs an EMPTY last segment, never sha256(''). This vector is a POST, so an
+    # SDK that shortcuts on the method ('only GET is empty') fails here.
+    empty = CONTRACT.fetch('vectors').fetch('post_empty_body_signing')
+    assert_equal empty['authorization'],
+                 Paymos::Signing.authorization(
+                   empty['api_key'], empty['api_secret'], empty['timestamp'], empty['method'],
+                   empty['path'], empty['query'], empty['body']
                  )
 
     query = Paymos::Signing.query(status: %w[paid_over paid], project_id: 'prj/a', limit: 50)
@@ -46,6 +58,7 @@ class ConformanceTest < Minitest::Test
 
   def test_all_contract_routes_are_exposed_and_signed
     calls = []
+    list_paths = ['/v1/invoices', '/v1/withdrawals', '/v1/payment-channels']
     transport = lambda do |method, url, headers, body, _timeout|
       calls << [method, URI(url).request_uri, headers, body]
       path = URI(url).path
@@ -53,8 +66,14 @@ class ConformanceTest < Minitest::Test
                         '{"server_time":1700000000}'
                       elsif path == '/v1/balances'
                         '[]'
-                      elsif method == 'GET' && ['/v1/invoices', '/v1/withdrawals'].include?(path)
+                      elsif method == 'GET' && list_paths.include?(path)
                         '{"items":[],"next_cursor":null}'
+                      elsif path == '/v1/payment-channel-deposits'
+                        '{"items":[],"next_cursor":"cur_1"}'
+                      elsif path.include?('payment-channel-deposits') || path.end_with?('simulate-deposit')
+                        payment_channel_deposit_json
+                      elsif path.include?('payment-channels')
+                        payment_channel_json
                       elsif path.include?('invoice')
                         invoice_json
                       else
@@ -77,13 +96,21 @@ class ConformanceTest < Minitest::Test
     client.withdrawals.list(status: 'created')
     client.withdrawals.cancel('id', reason: 'merchant request')
     client.withdrawals.simulate_completion('id')
+    client.payment_channels.create(project_id: 'prj_1', external_id: 'customer-42')
+    client.payment_channels.get('id')
+    client.payment_channels.list(status: 'active')
+    client.payment_channels.block('id')
+    client.payment_channels.unblock('id')
+    client.payment_channels.simulate_deposit('id', amount: '100.00', currency: 'USDT', network: 'TRC20')
+    client.payment_channel_deposits.read(limit: 10)
+    client.payment_channel_deposits.get('id')
     client.balances.get
 
     expected = CONTRACT.fetch('resources').values.flatten.map do |route|
       [route['method'], route['path'].gsub('{id}', 'id')]
     end
     actual = calls.map { |method, path, _headers, _body| [method, path.split('?', 2).first] }
-    assert_equal 13, actual.length
+    assert_equal 21, actual.length
     assert_equal expected.sort, actual.sort
     assert(calls.all? { |_method, _path, headers, _body| headers['Authorization'].start_with?('HMAC-SHA256 pk:') })
     expected_user_agent = "paymos-ruby/#{Paymos::VERSION}"

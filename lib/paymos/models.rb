@@ -123,6 +123,80 @@ module Paymos
                         network destination_address created_at]
   end
 
+  # One accepted token on one rail. A missing minimum_deposit means the rail cannot be quoted right
+  # now — it never means the token has no minimum.
+  class PaymentChannelToken < Model
+    fields :symbol, :minimum_deposit, required: %i[symbol]
+  end
+
+  # One rail of a channel. The address is absent until that rail provisions, and never changes after.
+  class PaymentChannelNetwork < Model
+    fields :network, :status, :address, :tokens, required: %i[network status tokens]
+
+    def self.from(value)
+      model = super
+      new(**model.to_h, tokens: model.tokens.map { |item| PaymentChannelToken.from(item) })
+    end
+  end
+
+  class PaymentChannel < Model
+    fields :id, :project_id, :external_id, :status, :is_accepting_payments, :is_fully_provisioned,
+           :is_test, :applied_fee_percent, :customer_fee_percent, :networks, :created_at, :updated_at,
+           required: %i[id project_id external_id status is_accepting_payments is_fully_provisioned
+                        is_test applied_fee_percent customer_fee_percent networks created_at updated_at]
+
+    def self.from(value)
+      model = super
+      new(**model.to_h, networks: model.networks.map { |item| PaymentChannelNetwork.from(item) })
+    end
+  end
+
+  # Doubles as the `data` payload of every payment_channel.deposit.* webhook event (decoded via
+  # WebhookVerifier#construct_event, then PaymentChannelDeposit.from(event.data)). `confirming` and
+  # `reorged` are ADVISORY and may arrive out of order — a `confirming` can land after the
+  # `confirmed` for the same deposit, and a `reorged` can be superseded by a later `confirmed`.
+  # Credit only on payment_channel.deposit.confirmed with is_final true, and never let an advisory
+  # event regress a deposit already known to be confirmed: crediting on `confirming` releases goods
+  # against money a reorg can still take back.
+  class PaymentChannelDeposit < Model
+    fields :id, :payment_channel_id, :project_id, :payment_channel_external_id, :status, :is_final,
+           :is_test, :currency, :network, :chain_id, :contract_address, :gross, :fee, :net,
+           :applied_fee_percent, :customer_fee_percent, :tx_hash, :transfer_id, :source_address,
+           :destination_address, :block_height, :first_included_block_timestamp, :explorer_url,
+           :created_at, :updated_at, :confirmed_at,
+           required: %i[id payment_channel_id project_id payment_channel_external_id status is_final
+                        is_test currency network chain_id gross fee net applied_fee_percent
+                        customer_fee_percent tx_hash transfer_id destination_address block_height
+                        created_at updated_at]
+  end
+
+  # The one feed position that could not be rendered, and why. Without it a stuck feed is
+  # byte-identical to a quiet day, and a merchant cannot tell "no new payments" from "I am not
+  # seeing my money". Reasons: booked_auth_missing, inconsistent, deposit_missing, channel_missing,
+  # transfer_missing, not_confirmed.
+  class PaymentChannelDepositFeedBlockage < Model
+    fields :deposit_id, :reason
+  end
+
+  # One page of the confirmed-deposit feed. Deliberately NOT a Page: next_cursor is required here,
+  # because the feed has no last page. An empty page still hands back a cursor past the global
+  # publication positions this merchant's filter skipped, so store it and resume from it — never
+  # stop polling because a page came back empty.
+  class PaymentChannelDepositFeedPage < Model
+    fields :items, :next_cursor, :blocked, required: %i[items next_cursor]
+
+    def self.from(value)
+      model = super
+      raise Error, 'Paymos API page items must be an array' unless model.items.is_a?(Array)
+
+      cursor = model.next_cursor
+      raise Error, 'Paymos deposit feed page is missing a cursor' unless cursor.is_a?(String) && !cursor.empty?
+
+      new(items: model.items.map { |item| PaymentChannelDeposit.from(item) }, next_cursor: cursor,
+          blocked: model.blocked && PaymentChannelDepositFeedBlockage.from(model.blocked))
+    end
+  end
+
   class Balance < Model
     fields :currency, :available
   end
