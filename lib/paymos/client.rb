@@ -19,7 +19,7 @@ module Paymos
   class Client
     SAFE_METHODS = %w[GET HEAD OPTIONS].freeze
 
-    attr_reader :invoices, :withdrawals, :balances, :system
+    attr_reader :invoices, :withdrawals, :balances, :system, :payment_channels, :payment_channel_deposits
 
     def initialize(api_key:, api_secret:, base_url: 'https://api.paymos.io', timeout: 30,
                    max_retries: 2, base_delay: 0.150, transport: nil,
@@ -49,6 +49,8 @@ module Paymos
       @random = random
       @invoices = Invoices.new(self)
       @withdrawals = Withdrawals.new(self)
+      @payment_channels = PaymentChannels.new(self)
+      @payment_channel_deposits = PaymentChannelDeposits.new(self)
       @balances = Balances.new(self)
       @system = System.new(self)
     end
@@ -279,6 +281,80 @@ module Paymos
       return enum_for(__method__, max_pages: max_pages, **filters) unless block_given?
 
       Pagination.each(method(:list), filters, max_pages:, &block)
+    end
+  end
+
+  class PaymentChannels < Resource
+    # Create — or fetch. The same project plus external id answers 200 with the channel that already
+    # exists instead of 201 with a duplicate; both are a channel, so a caller never reads the status.
+    def create(project_id:, external_id:)
+      values = { project_id:, external_id: }
+      missing = values.select { |_name, value| !value.is_a?(String) || value.strip.empty? }.keys
+      raise ArgumentError, "Required values are missing: #{missing.join(', ')}" unless missing.empty?
+
+      PaymentChannel.from(@client.request('POST', '/v1/payment-channels', payload: values))
+    end
+
+    def get(payment_channel_id)
+      PaymentChannel.from(@client.request('GET', "/v1/payment-channels/#{segment(payment_channel_id)}"))
+    end
+
+    def list(limit: nil, cursor: nil, status: nil, external_id: nil, project_id: nil)
+      filters = validate_list_filters({ limit:, cursor:, status:, external_id:, project_id: }.compact)
+      Page.from(@client.request('GET', '/v1/payment-channels', query: Signing.query(filters)),
+                item_type: PaymentChannel)
+    end
+
+    def block(payment_channel_id)
+      PaymentChannel.from(@client.request('POST', "/v1/payment-channels/#{segment(payment_channel_id)}/block"))
+    end
+
+    def unblock(payment_channel_id)
+      PaymentChannel.from(@client.request('POST', "/v1/payment-channels/#{segment(payment_channel_id)}/unblock"))
+    end
+
+    # Sandbox only. network is required; stage defaults to confirmed server-side and is omitted from
+    # the payload entirely when unset, never sent as null.
+    def simulate_deposit(payment_channel_id, amount:, currency:, network:, stage: nil)
+      values = { amount:, currency:, network: }
+      missing = values.select { |_name, value| !value.is_a?(String) || value.strip.empty? }.keys
+      raise ArgumentError, "Required values are missing: #{missing.join(', ')}" unless missing.empty?
+
+      unless stage.nil? || %w[confirming reorged confirmed].include?(stage)
+        raise ArgumentError, 'Invalid simulation stage'
+      end
+
+      path = "/v1/sandbox/payment-channels/#{segment(payment_channel_id)}/simulate-deposit"
+      payload = { amount:, currency:, network:, stage: }.compact
+      PaymentChannelDeposit.from(@client.request('POST', path, payload:))
+    end
+
+    def each(max_pages: 100, **filters, &block)
+      return enum_for(__method__, max_pages: max_pages, **filters) unless block_given?
+
+      Pagination.each(method(:list), filters, max_pages:, &block)
+    end
+  end
+
+  class PaymentChannelDeposits < Resource
+    def get(deposit_id)
+      PaymentChannelDeposit.from(@client.request('GET', "/v1/payment-channel-deposits/#{segment(deposit_id)}"))
+    end
+
+    # Reads ONE page of the confirmed-deposit feed. Deliberately not named list and deliberately
+    # without an iterator: the feed never ends, so a helper that loops until the cursor is empty would
+    # either spin forever or stop on the first quiet page and leave reconciliation silently behind.
+    # confirmed_from is the initial-sync lower bound only; afterwards resume from the stored cursor.
+    def read(limit: nil, cursor: nil, project_id: nil, payment_channel_id: nil, confirmed_from: nil)
+      unless confirmed_from.nil? || (confirmed_from.is_a?(Integer) && confirmed_from >= 0)
+        raise ArgumentError, 'confirmed_from must be non-negative Unix seconds'
+      end
+
+      filters = validate_list_filters({ limit:, cursor:, project_id:, payment_channel_id:,
+                                        confirmed_from: }.compact)
+      PaymentChannelDepositFeedPage.from(
+        @client.request('GET', '/v1/payment-channel-deposits', query: Signing.query(filters))
+      )
     end
   end
 

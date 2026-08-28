@@ -133,6 +133,75 @@ module Paymos
     attr_reader cancelled_at: Integer?
   end
 
+  class PaymentChannelToken < Model
+    attr_reader symbol: String
+    attr_reader minimum_deposit: String?
+  end
+
+  class PaymentChannelNetwork < Model
+    attr_reader network: String
+    attr_reader status: String
+    attr_reader address: String?
+    attr_reader tokens: Array[PaymentChannelToken]
+  end
+
+  class PaymentChannel < Model
+    attr_reader id: String
+    attr_reader project_id: String
+    attr_reader external_id: String
+    attr_reader status: String
+    attr_reader is_accepting_payments: bool
+    attr_reader is_fully_provisioned: bool
+    attr_reader is_test: bool
+    attr_reader applied_fee_percent: Numeric
+    attr_reader customer_fee_percent: Integer
+    attr_reader networks: Array[PaymentChannelNetwork]
+    attr_reader created_at: Integer
+    attr_reader updated_at: Integer
+  end
+
+  class PaymentChannelDeposit < Model
+    attr_reader id: String
+    attr_reader payment_channel_id: String
+    attr_reader project_id: String
+    attr_reader payment_channel_external_id: String
+    attr_reader status: String
+    attr_reader is_final: bool
+    attr_reader is_test: bool
+    attr_reader currency: String
+    attr_reader network: String
+    attr_reader chain_id: Integer
+    attr_reader contract_address: String?
+    attr_reader gross: String
+    attr_reader fee: String
+    attr_reader net: String
+    attr_reader applied_fee_percent: Numeric
+    attr_reader customer_fee_percent: Integer
+    attr_reader tx_hash: String
+    attr_reader transfer_id: String
+    attr_reader source_address: String?
+    attr_reader destination_address: String
+    attr_reader block_height: Integer
+    attr_reader first_included_block_timestamp: Integer?
+    attr_reader explorer_url: String?
+    attr_reader created_at: Integer
+    attr_reader updated_at: Integer
+    attr_reader confirmed_at: Integer?
+  end
+
+  class PaymentChannelDepositFeedBlockage < Model
+    attr_reader deposit_id: String
+    attr_reader reason: String
+  end
+
+  # next_cursor is NOT optional: the feed never ends, so an empty page still carries the cursor to
+  # resume from. Store it; never stop because a page came back empty.
+  class PaymentChannelDepositFeedPage < Model
+    attr_reader items: Array[PaymentChannelDeposit]
+    attr_reader next_cursor: String
+    attr_reader blocked: PaymentChannelDepositFeedBlockage?
+  end
+
   class Balance < Model
     attr_reader currency: String
     attr_reader available: String
@@ -176,6 +245,22 @@ module Paymos
          | (?max_pages: Integer, **untyped filters) -> Enumerator[Withdrawal, void]
   end
 
+  class PaymentChannels
+    def create: (project_id: String, external_id: String) -> PaymentChannel
+    def get: (String payment_channel_id) -> PaymentChannel
+    def list: (?limit: Integer?, ?cursor: String?, ?status: String | Array[String]?, ?external_id: String?, ?project_id: String?) -> Page[PaymentChannel]
+    def block: (String payment_channel_id) -> PaymentChannel
+    def unblock: (String payment_channel_id) -> PaymentChannel
+    def simulate_deposit: (String payment_channel_id, amount: String, currency: String, network: String, ?stage: String?) -> PaymentChannelDeposit
+    def each: (?max_pages: Integer, **untyped filters) { (PaymentChannel) -> void } -> void
+         | (?max_pages: Integer, **untyped filters) -> Enumerator[PaymentChannel, void]
+  end
+
+  class PaymentChannelDeposits
+    def get: (String deposit_id) -> PaymentChannelDeposit
+    def read: (?limit: Integer?, ?cursor: String?, ?project_id: String?, ?payment_channel_id: String?, ?confirmed_from: Integer?) -> PaymentChannelDepositFeedPage
+  end
+
   class Balances
     def get: () -> Array[Balance]
   end
@@ -187,6 +272,8 @@ module Paymos
   class Client
     attr_reader invoices: Invoices
     attr_reader withdrawals: Withdrawals
+    attr_reader payment_channels: PaymentChannels
+    attr_reader payment_channel_deposits: PaymentChannelDeposits
     attr_reader balances: Balances
     attr_reader system: System
 
