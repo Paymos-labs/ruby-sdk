@@ -29,16 +29,10 @@ module Paymos
         raise ConfigurationError,
               'timeout, max_retries, and base_delay are invalid'
       end
-      raise ConfigurationError, 'base_url is required' if base_url.to_s.strip.empty?
+      validate_base_url(base_url)
 
       @api_key = api_key
       @api_secret = api_secret
-      origin = URI.parse(base_url)
-      unless origin.absolute? && origin.host && [nil, '',
-                                                 '/'].include?(origin.path) && origin.query.nil? && origin.fragment.nil?
-        raise ConfigurationError, 'base_url must be an absolute origin without a path'
-      end
-
       @base_url = base_url.delete_suffix('/')
       @timeout = timeout
       @max_retries = max_retries
@@ -105,6 +99,24 @@ module Paymos
     end
 
     private
+
+    # The API secret signs every request, so the scheme decides whether that credential is
+    # readable in transit. HTTPS in production; plain HTTP only against a loopback host, which
+    # is what a local integration test points at. Mirrors the Rust SDK's validate_base_url.
+    def validate_base_url(base_url)
+      raise ConfigurationError, 'base_url is required' if base_url.to_s.strip.empty?
+
+      origin = URI.parse(base_url)
+      unless origin.absolute? && origin.host && [nil, '', '/'].include?(origin.path) &&
+             origin.query.nil? && origin.fragment.nil?
+        raise ConfigurationError, 'base_url must be an absolute origin without a path'
+      end
+
+      loopback = %w[localhost 127.0.0.1 ::1].include?(origin.host.to_s.downcase)
+      return if origin.scheme == 'https' || (origin.scheme == 'http' && loopback)
+
+      raise ConfigurationError, 'base_url must use HTTPS (HTTP is allowed only for loopback tests)'
+    end
 
     def default_transport(method, url, headers, body, timeout)
       uri = URI(url)
@@ -230,7 +242,7 @@ module Paymos
     end
 
     def simulate_payment(invoice_id, stage:)
-      raise ArgumentError, 'Invalid simulation stage' unless %w[paid overpaid underpay cancel].include?(stage)
+      raise ArgumentError, 'Invalid simulation stage' unless %w[paid overpaid underpay cancel paid_late].include?(stage)
 
       Invoice.from(@client.request('POST', "/v1/sandbox/invoices/#{segment(invoice_id)}/simulate-payment",
                                    payload: { stage: }))

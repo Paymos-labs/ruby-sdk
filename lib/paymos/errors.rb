@@ -69,6 +69,15 @@ module Paymos
 
   class ValidationError < ApiError; end
   class AuthenticationError < ApiError; end
+
+  # A 403: the credential was accepted, something else refused. Deliberately a SUBCLASS of
+  # AuthenticationError so existing rescue blocks keep working, and deliberately its own class
+  # because the remedy is usually not "fix the key": 403 carries wrong-key-type
+  # (payout_key_required, payment_key_required, forbidden) next to plain business
+  # state (whitelist_required, merchant_suspended, widget_inactive, terminal_not_enabled,
+  # not_sandbox). An unwhitelisted payout address reported as an authentication failure sends the
+  # on-call engineer to rotate perfectly good credentials. Switch on `code` for the remedy.
+  class PermissionError < AuthenticationError; end
   class NotFoundError < ApiError; end
   class ConflictError < ApiError; end
   class GoneError < ApiError; end
@@ -79,7 +88,7 @@ module Paymos
   ERROR_TYPES = {
     400 => ValidationError,
     401 => AuthenticationError,
-    403 => AuthenticationError,
+    403 => PermissionError,
     404 => NotFoundError,
     409 => ConflictError,
     410 => GoneError,

@@ -98,8 +98,11 @@ module Paymos
   end
 
   class Invoice < Model
+    # paid_late_at: invoice-late-payment — money crossed the invoice's total after it had already
+    # closed as expired/underpaid. Unix seconds; nil while there is no late mark (field omitted).
+    # status keeps its terminal meaning; the marker travels beside it.
     fields :invoice_id, :project_id, :status, :is_final, :is_test, :payment_url,
-           :order, :payment, :created_at, :updated_at, :expires_at, :completed_at,
+           :order, :payment, :created_at, :updated_at, :expires_at, :completed_at, :paid_late_at,
            required: %i[invoice_id project_id status is_final is_test payment_url order created_at updated_at]
 
     def self.from(value)
@@ -109,9 +112,10 @@ module Paymos
   end
 
   class InvoiceListItem < Model
+    # paid_late_at: invoice-late-payment additive late mark, Unix seconds; nil while there is no mark (field omitted).
     fields :invoice_id, :project_id, :external_order_id, :client_id, :status,
            :is_final, :is_test, :amount, :currency, :network, :created_at,
-           :expires_at, :completed_at,
+           :expires_at, :completed_at, :paid_late_at,
            required: %i[invoice_id project_id external_order_id status is_final is_test amount currency created_at]
   end
 
