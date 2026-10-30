@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-30
+
+- fix(plugins): reject invalid Woo refund controls and unblock SDK checks
+- fix(sdk): preserve current refund contracts in TON conformance
+- fix(ton): return friendly addresses with existing webhook schema
+- feat(sdk-ruby): add refund create, list and get
+
+- **403 is no longer reported as an authentication failure.** `Paymos::PermissionError` (subclasses `Paymos::AuthenticationError`, so existing `rescue` blocks keep working) now carries every 403.
+- **Base URL must use HTTPS.** Plain HTTP is accepted only against a loopback host, which is what a local integration test points at. The API secret signs every request, so a plaintext base URL put that credential on the wire.
+
 ## [1.3.0] - 2026-10-14
 
 - Make the SDK CI tier green

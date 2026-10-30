@@ -1,6 +1,6 @@
 # Paymos Ruby SDK
 
-Official Ruby client for the Paymos Merchant API — invoices, withdrawals, balances,
+Official Ruby client for the Paymos Merchant API — invoices, withdrawals, refunds, balances,
 and static per-customer wallets with their confirmed-deposit feed. Its only runtime dependency is
 Ruby's official `base64` gem (required separately by modern Ruby versions).
 
@@ -31,6 +31,44 @@ balances = paymos.balances.get
 Responses are immutable Ruby objects with documented RBS signatures; request
 keywords remain idiomatic `snake_case` and are converted directly to the Paymos
 wire contract.
+
+Create invoice refunds with a Payment key. The server calculates the amount and
+returns it as a decimal string; there are no amount or destination arguments:
+
+```ruby
+refund = paymos.refunds.create(
+  invoice_id: invoice.invoice_id,
+  mode: Paymos::RefundMode::OVERPAYMENT,
+  external_order_id: "refund_order_123_overpayment"
+)
+puts "#{refund.withdrawal_id}: #{refund.amount} #{refund.currency}"
+
+filters = {
+  invoice_id: invoice.invoice_id,
+  status: [Paymos::WithdrawalStatus::COMPLETED],
+  created_from: "2026-01-01T00:00:00Z",
+  created_to: "2027-01-01T00:00:00Z",
+  limit: 100
+}
+page = paymos.refunds.list(**filters)
+next_page = paymos.refunds.list(**filters, cursor: page.next_cursor) if page.next_cursor
+refund = paymos.refunds.get(refund.withdrawal_id)
+```
+
+`full` returns all remaining payment; `overpayment` returns all remaining excess.
+For a payment of 120 against an invoice of 100, these are initially 120 and 20.
+After the overpayment refund completes, a new full refund returns 100. Refunds
+and their pages are immutable, including their decimal strings and first sender.
+
+Keep the same invoice, mode and `external_order_id` when retrying an uncertain
+outcome. Creation returns 201 and an identical replay returns 200; both yield a
+`Paymos::Refund`. Changing the mode under the same key raises
+`Paymos::ConflictError` (409). Missing or foreign refund IDs raise
+`Paymos::NotFoundError` (404). List periods use RFC 3339 timestamps, and
+`paymos.refunds.each` provides the same bounded cursor iteration as invoices.
+In sandbox, use `paymos.withdrawals.simulate_completion(refund.withdrawal_id)`,
+then read the refund again. Refunds have their own list and do not appear in the
+ordinary withdrawals list.
 
 A payment channel is one payer's reusable set of deposit addresses. Create it,
 read its rails, then poll the confirmed-deposit feed and persist the cursor:

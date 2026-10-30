@@ -133,6 +133,35 @@ module Paymos
     attr_reader cancelled_at: Integer?
   end
 
+  module RefundMode
+    FULL: "full"
+    OVERPAYMENT: "overpayment"
+  end
+
+  class Refund < Model
+    attr_reader withdrawal_id: String
+    attr_reader invoice_id: String
+    attr_reader mode: "full" | "overpayment"
+    attr_reader external_order_id: String
+    attr_reader status: String
+    attr_reader is_final: bool
+    attr_reader is_test: bool
+    attr_reader amount: String
+    attr_reader fee: String?
+    attr_reader currency: String
+    attr_reader network: String
+    attr_reader destination_address: String
+    attr_reader first_sender: String
+    attr_reader type: String?
+    attr_reader project_id: String?
+    attr_reader tx_hash: String?
+    attr_reader explorer_url: String?
+    attr_reader created_at: Integer
+    attr_reader completed_at: Integer?
+    attr_reader failed_at: Integer?
+    attr_reader cancelled_at: Integer?
+  end
+
   class PaymentChannelToken < Model
     attr_reader symbol: String
     attr_reader minimum_deposit: String?
@@ -245,6 +274,15 @@ module Paymos
          | (?max_pages: Integer, **untyped filters) -> Enumerator[Withdrawal, void]
   end
 
+  class Refunds
+    def simulate: (String refund_id, String status) -> Refund
+    def create: (invoice_id: String, mode: "full" | "overpayment", external_order_id: String) -> Refund
+    def get: (String refund_id) -> Refund
+    def list: (?limit: Integer?, ?cursor: String?, ?invoice_id: String?, ?status: String | Array[String]?, ?created_from: String?, ?created_to: String?) -> Page[Refund]
+    def each: (?max_pages: Integer, **untyped filters) { (Refund) -> void } -> void
+         | (?max_pages: Integer, **untyped filters) -> Enumerator[Refund, void]
+  end
+
   class PaymentChannels
     def create: (project_id: String, external_id: String) -> PaymentChannel
     def get: (String payment_channel_id) -> PaymentChannel
@@ -272,6 +310,7 @@ module Paymos
   class Client
     attr_reader invoices: Invoices
     attr_reader withdrawals: Withdrawals
+    attr_reader refunds: Refunds
     attr_reader payment_channels: PaymentChannels
     attr_reader payment_channel_deposits: PaymentChannelDeposits
     attr_reader balances: Balances
