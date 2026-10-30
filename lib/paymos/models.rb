@@ -23,6 +23,11 @@ module Paymos
     CANCELLED = 'cancelled'
   end
 
+  module RefundMode
+    FULL = 'full'
+    OVERPAYMENT = 'overpayment'
+  end
+
   class Model
     class << self
       attr_reader :field_names, :required_names
@@ -125,6 +130,14 @@ module Paymos
            :explorer_url, :created_at, :completed_at, :failed_at, :cancelled_at,
            required: %i[withdrawal_id external_order_id status is_final is_test amount currency
                         network destination_address created_at]
+  end
+
+  class Refund < Model
+    fields :withdrawal_id, :invoice_id, :mode, :external_order_id, :status, :is_final, :is_test,
+           :amount, :fee, :currency, :network, :destination_address, :first_sender, :tx_hash,
+           :explorer_url, :created_at, :completed_at, :failed_at, :cancelled_at, :type, :project_id,
+           required: %i[withdrawal_id invoice_id mode external_order_id status is_final is_test amount
+                        currency network destination_address first_sender created_at]
   end
 
   # One accepted token on one rail. A missing minimum_deposit means the rail cannot be quoted right

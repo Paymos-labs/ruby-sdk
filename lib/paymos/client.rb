@@ -19,7 +19,7 @@ module Paymos
   class Client
     SAFE_METHODS = %w[GET HEAD OPTIONS].freeze
 
-    attr_reader :invoices, :withdrawals, :balances, :system, :payment_channels, :payment_channel_deposits
+    attr_reader :invoices, :withdrawals, :refunds, :balances, :system, :payment_channels, :payment_channel_deposits
 
     def initialize(api_key:, api_secret:, base_url: 'https://api.paymos.io', timeout: 30,
                    max_retries: 2, base_delay: 0.150, transport: nil,
@@ -43,6 +43,7 @@ module Paymos
       @random = random
       @invoices = Invoices.new(self)
       @withdrawals = Withdrawals.new(self)
+      @refunds = Refunds.new(self)
       @payment_channels = PaymentChannels.new(self)
       @payment_channel_deposits = PaymentChannelDeposits.new(self)
       @balances = Balances.new(self)
@@ -293,6 +294,53 @@ module Paymos
       return enum_for(__method__, max_pages: max_pages, **filters) unless block_given?
 
       Pagination.each(method(:list), filters, max_pages:, &block)
+    end
+  end
+
+  class Refunds < Resource
+    def create(invoice_id:, mode:, external_order_id:)
+      values = { invoice_id:, mode:, external_order_id: }
+      missing = values.select { |_name, value| !value.is_a?(String) || value.strip.empty? }.keys
+      raise ArgumentError, "Required values are missing: #{missing.join(', ')}" unless missing.empty?
+      raise ArgumentError, 'Invalid refund mode' unless [RefundMode::FULL, RefundMode::OVERPAYMENT].include?(mode)
+
+      Refund.from(@client.request('POST', '/v1/refunds', payload: values))
+    end
+
+    def simulate(refund_id, status)
+      Refund.from(@client.request('POST', "/v1/sandbox/refunds/#{segment(refund_id)}/simulate",
+                                  payload: { status: }))
+    end
+
+    def get(refund_id) = Refund.from(@client.request('GET', "/v1/refunds/#{segment(refund_id)}"))
+
+    def list(limit: nil, cursor: nil, invoice_id: nil, status: nil, created_from: nil, created_to: nil)
+      filters = validate_list_filters({ limit:, cursor:, invoice_id:, status: }.compact)
+      validate_period(created_from, created_to)
+      filters.merge!({ created_from:, created_to: }.compact)
+      Page.from(@client.request('GET', '/v1/refunds', query: Signing.query(filters)), item_type: Refund)
+    end
+
+    def each(max_pages: 100, **filters, &block)
+      return enum_for(__method__, max_pages: max_pages, **filters) unless block_given?
+
+      Pagination.each(method(:list), filters, max_pages:, &block)
+    end
+
+    private
+
+    def validate_period(created_from, created_to)
+      from, to = [created_from, created_to].map do |value|
+        next if value.nil?
+
+        unless value.is_a?(String) &&
+               value.match?(/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\z/i)
+          raise ArgumentError, 'created_from and created_to must be RFC 3339 timestamps'
+        end
+
+        Time.iso8601(value)
+      end
+      raise ArgumentError, 'created_to must be later than created_from' if from && to && from >= to
     end
   end
 

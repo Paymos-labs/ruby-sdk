@@ -5,7 +5,7 @@ require 'minitest/autorun'
 require_relative '../lib/paymos'
 require_relative 'payment_channel_fixtures'
 
-class ConformanceTest < Minitest::Test
+class SignatureConformanceTest < Minitest::Test
   include PaymentChannelFixtures
 
   CONTRACT = JSON.parse(File.read(File.expand_path('../conformance/contract.json', __dir__)))
@@ -47,6 +47,31 @@ class ConformanceTest < Minitest::Test
     refute verifier.verify("#{vector['header']},t=#{vector['timestamp']}", vector['raw_body'], now: vector['now'])
   end
 
+  def test_signed_ton_webhook_raw_and_friendly_v1_preserve_fields
+    fixtures = CONTRACT.dig('vectors', 'ton_webhooks')
+    assert_equal 8, fixtures.fetch('vectors').length
+    verifier = Paymos::WebhookVerifier.new(fixtures.fetch('secret'))
+    fixtures.fetch('vectors').each do |vector|
+      event = verifier.construct_event(vector.fetch('header'), vector.fetch('raw_body'), now: fixtures.fetch('now'))
+      assert_equal vector.fetch('event_id'), event.event_id
+      assert_equal vector.fetch('event_type'), event.event_type
+      assert_equal 1, vector.fetch('version')
+      assert_equal vector.fetch('version'), event.version
+      assert_equal fixtures.fetch('now'), event.occurred_at
+      vector.fetch('expect').each do |expected|
+        value = expected.fetch('path').reduce(event.data) { |current, key| current.fetch(key) }
+        assert_equal expected.fetch('value'), value, vector.fetch('name')
+      end
+      refute verifier.verify(vector.fetch('header'), "#{vector.fetch('raw_body')} ", now: fixtures.fetch('now'))
+    end
+  end
+end
+
+class ConformanceTest < Minitest::Test
+  include PaymentChannelFixtures
+
+  CONTRACT = SignatureConformanceTest::CONTRACT
+
   def test_problem_details_uses_top_level_code
     vector = CONTRACT.dig('vectors', 'problem_details', 'multi')
     error = Paymos.api_error(400, JSON.generate(vector))
@@ -58,7 +83,7 @@ class ConformanceTest < Minitest::Test
 
   def test_all_contract_routes_are_exposed_and_signed
     calls = []
-    list_paths = ['/v1/invoices', '/v1/withdrawals', '/v1/payment-channels']
+    list_paths = ['/v1/invoices', '/v1/withdrawals', '/v1/refunds', '/v1/payment-channels']
     transport = lambda do |method, url, headers, body, _timeout|
       calls << [method, URI(url).request_uri, headers, body]
       path = URI(url).path
@@ -74,6 +99,10 @@ class ConformanceTest < Minitest::Test
                         payment_channel_deposit_json
                       elsif path.include?('payment-channels')
                         payment_channel_json
+                      elsif path.include?('refunds')
+                        JSON.generate(JSON.parse(withdrawal_json).merge(
+                                        invoice_id: 'inv_1', mode: 'full', first_sender: 'address'
+                                      ))
                       elsif path.include?('invoice')
                         invoice_json
                       else
@@ -96,6 +125,10 @@ class ConformanceTest < Minitest::Test
     client.withdrawals.list(status: 'created')
     client.withdrawals.cancel('id', reason: 'merchant request')
     client.withdrawals.simulate_completion('id')
+    client.refunds.create(invoice_id: 'inv_1', mode: 'full', external_order_id: 'refund_1')
+    client.refunds.list(invoice_id: 'inv_1')
+    client.refunds.get('id')
+    client.refunds.simulate('id', 'completed')
     client.payment_channels.create(project_id: 'prj_1', external_id: 'customer-42')
     client.payment_channels.get('id')
     client.payment_channels.list(status: 'active')
@@ -110,7 +143,7 @@ class ConformanceTest < Minitest::Test
       [route['method'], route['path'].gsub('{id}', 'id')]
     end
     actual = calls.map { |method, path, _headers, _body| [method, path.split('?', 2).first] }
-    assert_equal 21, actual.length
+    assert_equal 25, actual.length
     assert_equal expected.sort, actual.sort
     assert(calls.all? { |_method, _path, headers, _body| headers['Authorization'].start_with?('HMAC-SHA256 pk:') })
     expected_user_agent = "paymos-ruby/#{Paymos::VERSION}"
