@@ -211,14 +211,14 @@ module Paymos
 
   class Invoices < Resource
     def create(project_id:, amount:, currency:, external_order_id:, network: nil,
-               allow_multiple_payments: nil, customer_fee_percent: nil, client_id: nil)
+               customer_fee_percent: nil, client_id: nil)
       required_keywords(project_id:, amount:, currency:, external_order_id:)
       if !customer_fee_percent.nil? && !(customer_fee_percent.is_a?(Integer) && customer_fee_percent.between?(0, 100))
         raise ArgumentError, 'customer_fee_percent must be between 0 and 100'
       end
 
       payload = { project_id:, amount:, currency:, external_order_id:, network:,
-                  allow_multiple_payments:, customer_fee_percent:, client_id: }.compact
+                  customer_fee_percent:, client_id: }.compact
       Invoice.from(@client.request('POST', '/v1/invoices', payload:))
     end
 
