@@ -254,7 +254,7 @@ module Paymos
   end
 
   class Invoices
-    def create: (project_id: String, amount: String, currency: String, external_order_id: String, ?network: String?, ?allow_multiple_payments: bool?, ?customer_fee_percent: Integer?, ?client_id: String?) -> Invoice
+    def create: (project_id: String, amount: String, currency: String, external_order_id: String, ?network: String?, ?customer_fee_percent: Integer?, ?client_id: String?) -> Invoice
     def get: (String invoice_id) -> Invoice
     def list: (?limit: Integer?, ?cursor: String?, ?status: String | Array[String]?, ?external_order_id: String?, ?project_id: String?, ?created_from: Integer?, ?created_to: Integer?) -> Page[InvoiceListItem]
     def cancel: (String invoice_id, reason: String) -> Invoice
