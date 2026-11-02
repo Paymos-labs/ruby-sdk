@@ -133,9 +133,9 @@ module Paymos
   end
 
   class Refund < Model
-    fields :withdrawal_id, :invoice_id, :mode, :external_order_id, :status, :is_final, :is_test,
+    fields :type, :project_id, :withdrawal_id, :invoice_id, :mode, :external_order_id, :status, :is_final, :is_test,
            :amount, :fee, :currency, :network, :destination_address, :first_sender, :tx_hash,
-           :explorer_url, :created_at, :completed_at, :failed_at, :cancelled_at, :type, :project_id,
+           :explorer_url, :created_at, :completed_at, :failed_at, :cancelled_at,
            required: %i[withdrawal_id invoice_id mode external_order_id status is_final is_test amount
                         currency network destination_address first_sender created_at]
   end

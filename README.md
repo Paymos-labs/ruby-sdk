@@ -67,6 +67,7 @@ outcome. Creation returns 201 and an identical replay returns 200; both yield a
 `Paymos::NotFoundError` (404). List periods use RFC 3339 timestamps, and
 `paymos.refunds.each` provides the same bounded cursor iteration as invoices.
 In sandbox, use `paymos.withdrawals.simulate_completion(refund.withdrawal_id)`,
+In sandbox, use `paymos.refunds.simulate(refund.withdrawal_id, status: 'completed')`,
 then read the refund again. Refunds have their own list and do not appear in the
 ordinary withdrawals list.
 
