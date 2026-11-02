@@ -276,6 +276,7 @@ module Paymos
 
   class Refunds
     def simulate: (String refund_id, String status) -> Refund
+                | (String refund_id, status: String) -> Refund
     def create: (invoice_id: String, mode: "full" | "overpayment", external_order_id: String) -> Refund
     def get: (String refund_id) -> Refund
     def list: (?limit: Integer?, ?cursor: String?, ?invoice_id: String?, ?status: String | Array[String]?, ?created_from: String?, ?created_to: String?) -> Page[Refund]

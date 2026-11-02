@@ -37,6 +37,7 @@ module Paymos
       @timeout = timeout
       @max_retries = max_retries
       @base_delay = base_delay
+      @refund_transport_is_default = !transport
       @transport = transport || method(:default_transport)
       @clock = clock
       @sleeper = sleeper
@@ -52,6 +53,7 @@ module Paymos
 
     def request(method, path, payload: nil, query: '')
       method = method.to_s.upcase
+      refund_transport = checked_refund_transport(method, path)
       body = payload.nil? ? '' : JSON.generate(payload)
       attempts = 0
 
@@ -65,7 +67,9 @@ module Paymos
             'Accept' => 'application/json',
             'User-Agent' => "paymos-ruby/#{VERSION}"
           }
-          response = @transport.call(method, "#{@base_url}#{path}#{query}", headers, body.empty? ? nil : body, @timeout)
+          response = (refund_transport || @transport).call(
+            method, "#{@base_url}#{path}#{query}", headers, body.empty? ? nil : body, @timeout
+          )
         rescue IOError, SystemCallError, Timeout::Error, SocketError => e
           if attempts < @max_retries && SAFE_METHODS.include?(method)
             wait(attempts, nil)
@@ -79,7 +83,7 @@ module Paymos
           raise Error, 'Paymos transport returned an invalid response'
         end
 
-        if attempts < @max_retries && retryable?(method, response.status)
+        if attempts < @max_retries && retryable_request?(method, path, response.status)
           wait(attempts, header(response.headers, 'retry-after'))
           attempts += 1
           next
@@ -134,6 +138,24 @@ module Paymos
       ) { |http| http.request(request) }
       Response.new(status: response.code.to_i, body: response.body.to_s,
                    headers: response.to_hash.transform_values(&:first))
+    end
+
+    def refund_create?(method, path)
+      method == 'POST' && path == '/v1/refunds'
+    end
+
+    def checked_refund_transport(method, path)
+      return nil unless refund_create?(method, path)
+
+      transport = @transport
+      trusted = Paymos::Client.instance_method(:default_transport).bind(self)
+      return transport if @refund_transport_is_default && trusted == transport
+
+      raise ConfigurationError, 'Refund creation requires the standard Net::HTTP transport'
+    end
+
+    def retryable_request?(method, path, status)
+      !refund_create?(method, path) && retryable?(method, status)
     end
 
     def retryable?(method, status)
@@ -298,6 +320,22 @@ module Paymos
   end
 
   class Refunds < Resource
+    UNSPECIFIED_STATUS = Object.new.freeze
+    private_constant :UNSPECIFIED_STATUS
+
+    def simulate(refund_id, positional_status = UNSPECIFIED_STATUS, status: UNSPECIFIED_STATUS)
+      if positional_status.equal?(UNSPECIFIED_STATUS) == status.equal?(UNSPECIFIED_STATUS)
+        raise ArgumentError, 'Provide exactly one refund simulation status'
+      end
+
+      status = positional_status unless positional_status.equal?(UNSPECIFIED_STATUS)
+      unless %w[completed failed cancelled].include?(status)
+        raise ArgumentError, 'A terminal refund simulation status is required'
+      end
+
+      Refund.from(@client.request('POST', "/v1/sandbox/refunds/#{segment(refund_id)}/simulate", payload: { status: }))
+    end
+
     def create(invoice_id:, mode:, external_order_id:)
       values = { invoice_id:, mode:, external_order_id: }
       missing = values.select { |_name, value| !value.is_a?(String) || value.strip.empty? }.keys
@@ -305,11 +343,6 @@ module Paymos
       raise ArgumentError, 'Invalid refund mode' unless [RefundMode::FULL, RefundMode::OVERPAYMENT].include?(mode)
 
       Refund.from(@client.request('POST', '/v1/refunds', payload: values))
-    end
-
-    def simulate(refund_id, status)
-      Refund.from(@client.request('POST', "/v1/sandbox/refunds/#{segment(refund_id)}/simulate",
-                                  payload: { status: }))
     end
 
     def get(refund_id) = Refund.from(@client.request('GET', "/v1/refunds/#{segment(refund_id)}"))
