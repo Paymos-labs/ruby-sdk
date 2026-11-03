@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-03
+
+- fix(sdk): resolve preflight lint and conformance vector count for autorelease
+- feat(refunds): finalize clean merchant refunds spec, SDKs, CMS plugins, and targeted test scripts
+
+- **403 is no longer reported as an authentication failure.** `Paymos::PermissionError` (subclasses `Paymos::AuthenticationError`, so existing `rescue` blocks keep working) now carries every 403.
+- **Base URL must use HTTPS.** Plain HTTP is accepted only against a loopback host, which is what a local integration test points at. The API secret signs every request, so a plaintext base URL put that credential on the wire.
+
 ## [1.5.2] - 2026-11-02
 
 - wip: snapshot shared working tree before merging main
