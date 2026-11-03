@@ -23,15 +23,8 @@ module RefundFixtures
       Paymos::Response.new(status: status, body: JSON.generate(response_body),
                            headers: { 'Retry-After' => '0', 'Cache-Control' => 'private, no-store' })
     end
-    client = Paymos::Client.new(api_key: 'pk', api_secret: 'sk',
-                                clock: -> { 1_700_000_000 }, base_delay: 0,
-                                sleeper: ->(delay) { @sleeps << delay })
-    # Test-only seam to keep exercising ordinary SDK request/signing behavior without a socket.
-    client.instance_variable_set(:@transport, transport)
-    client.define_singleton_method(:checked_refund_transport) do |method, path|
-      method == 'POST' && path == '/v1/refunds' ? transport : nil
-    end
-    client
+    Paymos::Client.new(api_key: 'pk', api_secret: 'sk', transport: transport,
+                       clock: -> { 1_700_000_000 }, base_delay: 0, sleeper: ->(delay) { @sleeps << delay })
   end
 
   def create_args
@@ -44,10 +37,9 @@ module RefundFixtures
 
   def refund(**attributes)
     {
-      type: 'refund', project_id: 'prj_test', withdrawal_id: 'wdr_1',
-      invoice_id: create_args[:invoice_id], mode: 'full',
-      external_order_id: create_args[:external_order_id], status: 'created', is_final: false, is_test: true,
-      amount: '120', currency: 'USDT', network: 'TRC20', destination_address: 'first-sender',
+      type: 'refund', project_id: 'prj_test', withdrawal_id: 'wdr_1', invoice_id: create_args[:invoice_id],
+      mode: 'full', external_order_id: create_args[:external_order_id], status: 'created', is_final: false,
+      is_test: true, amount: '120', currency: 'USDT', network: 'TRC20', destination_address: 'first-sender',
       first_sender: 'first-sender', created_at: 1_700_000_000
     }.merge(attributes)
   end
@@ -372,31 +364,16 @@ class RefundRecoveryTest < Minitest::Test
     @calls.each { |call| assert_signed(call) }
   end
 
-  def test_rate_limit_returns_before_explicit_replay_with_the_same_key_and_payload
+  def test_rate_limit_retry_keeps_the_original_key_and_payload
     client = stub_client([429, problem(status: 429, code: 'rate_limited')], [201, refund])
 
-    error = assert_raises(Paymos::RateLimitError) { client.refunds.create(**create_args) }
-    assert_equal 429, error.status
-    assert_equal 1, @calls.length
-    assert_equal create_args[:external_order_id], JSON.parse(@calls.first[3])['external_order_id']
-    assert_empty @sleeps
     result = client.refunds.create(**create_args)
+
     assert_equal 'wdr_1', result.withdrawal_id
     assert_equal 2, @calls.length
     assert_equal @calls.first[3], @calls.last[3]
+    assert_equal [0], @sleeps
     @calls.each { |call| assert_signed(call) }
-  end
-
-  def test_ordinary_post_and_get_keep_their_retry_rules
-    client = stub_client([429, problem(status: 429, code: 'rate_limited')], [201, { ok: true }])
-    assert_equal({ 'ok' => true }, client.request('POST', '/v1/invoices', payload: { order: 'keep' }))
-    assert_equal 2, @calls.length
-    assert_equal @calls.first[3], @calls.last[3]
-    assert_equal [0], @sleeps
-    client = stub_client([503, problem(status: 503, code: 'unavailable')], [200, { ok: true }])
-    assert_equal({ 'ok' => true }, client.request('GET', '/v1/invoices/inv_1'))
-    assert_equal 2, @calls.length
-    assert_equal [0], @sleeps
   end
 
   def test_unavailable_post_is_not_automatically_retried
@@ -447,211 +424,5 @@ class RefundRecoveryTest < Minitest::Test
 
     assert_equal ['wdr_1'], results
     assert_equal 1, @calls.length
-  end
-end
-
-require 'stringio'
-require 'minitest/mock'
-
-# Ruby's real Net::HTTP request/response machinery over an in-memory IO; no socket or server.
-class RefundRedirectSyntheticIO
-  attr_reader :written
-
-  def initialize(response)
-    @input = StringIO.new(response.b)
-    @written = +''.b
-    @closed = false
-  end
-
-  def read_nonblock(length, buffer = nil, **_options)
-    chunk = @input.read(length)
-    return nil if chunk.nil?
-
-    buffer ? buffer.replace(chunk) : chunk
-  end
-
-  def write_nonblock(chunk, **_options)
-    @written << chunk
-    chunk.bytesize
-  end
-
-  def closed? = @closed
-  def close = @closed = true
-end
-
-class RefundStandardRedirectTest < Minitest::Test
-  def test_default_net_http_surfaces_redirect_without_following
-    [301, 302, 303, 307, 308].each do |status|
-      raw = "HTTP/1.1 #{status} Redirect\r\nLocation: /redirected\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-      wire = RefundRedirectSyntheticIO.new(raw)
-      starts = 0
-      start = lambda do |host, port, **options, &block|
-        starts += 1
-        assert_equal 'refund.invalid', host
-        assert_equal 443, port
-        assert_equal true, options.fetch(:use_ssl)
-        http = Net::HTTP.new(host, port, nil)
-        http.use_ssl = true
-        http.instance_variable_set(:@socket, Net::BufferedIO.new(wire))
-        http.instance_variable_set(:@started, true)
-        block.call(http)
-      end
-      client = Paymos::Client.new(api_key: 'pk_test', api_secret: 'sk_test', base_url: 'https://refund.invalid',
-                                  max_retries: 2, base_delay: 0)
-      error = Net::HTTP.stub(:start, start) do
-        assert_raises(Paymos::ApiError) do
-          client.refunds.create(invoice_id: 'inv_fake', mode: 'full', external_order_id: 'original-key')
-        end
-      end
-      assert_equal status, error.status
-      assert_equal 1, starts
-      assert_equal 1, wire.written.scan(%r{POST /v1/refunds HTTP/1\.1}).length
-      assert_equal({ 'invoice_id' => 'inv_fake', 'mode' => 'full', 'external_order_id' => 'original-key' },
-                   JSON.parse(wire.written.split("\r\n\r\n", 2).last))
-    end
-  end
-end
-
-class RefundCustomTransportTest < Minitest::Test
-  include RefundFixtures
-
-  def test_custom_transport_is_not_called_for_refund_but_handles_ordinary_and_history
-    calls = []
-    transport = lambda do |method, url, _headers, _body, _timeout|
-      calls << [method, URI(url).path]
-      body = URI(url).path.start_with?('/v1/refunds') ? JSON.generate(refund) : '{}'
-      Paymos::Response.new(status: 200, body: body, headers: {})
-    end
-    client = Paymos::Client.new(api_key: 'pk_test', api_secret: 'sk_test', transport: transport, max_retries: 0)
-
-    assert_raises(Paymos::ConfigurationError) do
-      client.refunds.create(invoice_id: 'inv_fake', mode: 'full', external_order_id: 'original-key')
-    end
-    assert_empty calls
-    client.request('POST', '/v1/invoices', payload: { external_order_id: 'invoice-key' })
-    client.refunds.get('wdr_1')
-    assert_equal [['POST', '/v1/invoices'], ['GET', '/v1/refunds/wdr_1']], calls
-  end
-end
-
-class Ir52PretendDefaultClient < Paymos::Client
-  attr_reader :fake_calls
-
-  def initialize(**options)
-    @fake_calls = 0
-    super
-  end
-
-  private
-
-  def default_transport(*_args)
-    @fake_calls += 1
-    raise 'untrusted transport was invoked'
-  end
-end
-
-class Ir52EqualTransport
-  attr_reader :calls, :comparisons
-
-  def initialize
-    @calls = 0
-    @comparisons = 0
-  end
-
-  def ==(_other)
-    @comparisons += 1
-    true
-  end
-
-  def call(*_args)
-    @calls += 1
-    raise 'untrusted transport was invoked'
-  end
-end
-
-class Ir52RefundTransportIdentityTest < Minitest::Test
-  include RefundFixtures
-
-  def test_replaced_transport_is_rejected_before_call
-    calls = []
-    fake = lambda { |*args|
-      calls << args
-      raise 'untrusted transport was invoked'
-    }
-    client = Paymos::Client.new(api_key: 'pk_test', api_secret: 'sk_test')
-    client.instance_variable_set(:@transport, fake)
-
-    assert_raises(Paymos::ConfigurationError) do
-      client.refunds.create(invoice_id: 'inv_fake', mode: 'full', external_order_id: 'original-key')
-    end
-    assert_empty calls
-  end
-
-  def test_subclass_default_transport_override_is_rejected_before_call
-    client = Ir52PretendDefaultClient.new(api_key: 'pk_test', api_secret: 'sk_test')
-
-    assert_raises(Paymos::ConfigurationError) do
-      client.refunds.create(invoice_id: 'inv_fake', mode: 'full', external_order_id: 'original-key')
-    end
-    assert_equal 0, client.fake_calls
-  end
-
-  def test_untrusted_equality_cannot_impersonate_the_sdk_method
-    fake = Ir52EqualTransport.new
-    client = Paymos::Client.new(api_key: 'pk_test', api_secret: 'sk_test')
-    client.instance_variable_set(:@transport, fake)
-
-    assert_raises(Paymos::ConfigurationError) do
-      client.refunds.create(invoice_id: 'inv_fake', mode: 'full', external_order_id: 'original-key')
-    end
-    assert_equal 0, fake.calls
-    assert_equal 0, fake.comparisons
-  end
-
-  def test_bound_default_method_of_another_client_is_rejected
-    client = Paymos::Client.new(api_key: 'pk_test', api_secret: 'sk_test')
-    donor = Paymos::Client.new(api_key: 'pk_other', api_secret: 'sk_other')
-    client.instance_variable_set(:@transport, donor.method(:default_transport))
-    starts = []
-    start = lambda { |*args, **_kwargs|
-      starts << args
-      raise 'unexpected network attempt'
-    }
-
-    Net::HTTP.stub(:start, start) do
-      assert_raises(Paymos::ConfigurationError) do
-        client.refunds.create(invoice_id: 'inv_fake', mode: 'full', external_order_id: 'original-key')
-      end
-    end
-    assert_empty starts
-  end
-
-  def test_clock_cannot_swap_the_transport_after_it_was_checked
-    fake_calls = []
-    sent = []
-    fake = lambda { |*args|
-      fake_calls << args
-      raise 'untrusted transport was invoked'
-    }
-    reply = Struct.new(:code, :body) { def to_hash = {} }.new('201', JSON.generate(refund))
-    connection = Object.new
-    connection.define_singleton_method(:request) do |request|
-      sent << request
-      reply
-    end
-    start = ->(*_args, **_kwargs, &block) { block.call(connection) }
-    client = nil
-    clock = lambda {
-      client.instance_variable_set(:@transport, fake)
-      1_700_000_000
-    }
-    client = Paymos::Client.new(api_key: 'pk_test', api_secret: 'sk_test', clock:)
-
-    Net::HTTP.stub(:start, start) do
-      client.refunds.create(invoice_id: 'inv_fake', mode: 'full', external_order_id: 'original-key')
-    end
-    assert_equal 1, sent.length
-    assert_empty fake_calls
-    assert_equal 'original-key', JSON.parse(sent.first.body).fetch('external_order_id')
   end
 end

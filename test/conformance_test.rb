@@ -87,11 +87,7 @@ class SignatureConformanceTest < Minitest::Test
                       end
       Paymos::Response.new(status: 200, body: response_body, headers: {})
     end
-    client = Paymos::Client.new(api_key: 'pk', api_secret: 'sk', clock: -> { 1_700_000_000 })
-    client.instance_variable_set(:@transport, transport) # Test-only network seam.
-    client.define_singleton_method(:checked_refund_transport) do |method, path|
-      method == 'POST' && path == '/v1/refunds' ? transport : nil
-    end
+    client = Paymos::Client.new(api_key: 'pk', api_secret: 'sk', transport: transport, clock: -> { 1_700_000_000 })
 
     client.system.time
     client.invoices.create(project_id: 'prj_1', amount: '10.00', currency: 'USD', external_order_id: 'order_1')
