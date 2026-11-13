@@ -444,16 +444,19 @@ module Paymos
       raise ArgumentError, 'max_pages must be a positive integer' unless max_pages.is_a?(Integer) && max_pages.positive?
 
       filters = filters.dup
-      cursor = filters[:cursor]
+      # Every cursor this walk has requested, not only the previous one: a cycle A -> B -> A
+      # repeats a position without two equal cursors in a row.
+      used = {}
+      used[filters[:cursor]] = true unless filters[:cursor].nil?
       max_pages.times do
         page = fetch.call(**filters)
         page.items.each(&block)
         next_cursor = page.next_cursor
         return if next_cursor.nil? || next_cursor.to_s.empty?
-        raise Error, 'Paymos API returned the same pagination cursor twice' if next_cursor == cursor
+        raise Error, 'Paymos API returned a pagination cursor this walk already used' if used.key?(next_cursor)
 
-        cursor = next_cursor
-        filters[:cursor] = cursor
+        used[next_cursor] = true
+        filters[:cursor] = next_cursor
       end
     end
   end

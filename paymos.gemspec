@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.homepage = 'https://paymos.io/docs/server-sdks'
   spec.license = 'MIT'
   spec.required_ruby_version = '>= 3.1'
-  spec.files = Dir['lib/**/*.rb', 'sig/**/*.rbs', 'README.md', 'CHANGELOG.md', 'LICENSE']
+  spec.files = Dir['lib/**/*.rb', 'sig/**/*.rbs', 'conformance/contract.json', 'README.md', 'CHANGELOG.md', 'LICENSE']
   spec.require_paths = ['lib']
   spec.add_dependency 'base64', '~> 0.3'
   spec.metadata = {

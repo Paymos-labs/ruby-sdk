@@ -174,6 +174,28 @@ class SignatureConformanceTest < Minitest::Test
     assert_raises(Paymos::Error) { iterator.next }
   end
 
+  # A cycle A -> B -> A has no two equal cursors in a row; the walk must still stop at the
+  # first cursor it already used instead of reading page B again.
+  def test_rejects_previously_seen_nonadjacent_cursor
+    requested = []
+    pages = [
+      { items: [invoice_list_item(invoice_id: 'one')], next_cursor: 'cur_a' },
+      { items: [invoice_list_item(invoice_id: 'two')], next_cursor: 'cur_b' },
+      { items: [invoice_list_item(invoice_id: 'three')], next_cursor: 'cur_a' },
+      { items: [invoice_list_item(invoice_id: 'four')], next_cursor: 'cur_c' }
+    ]
+    transport = lambda do |_method, url, *_rest|
+      requested << url
+      Paymos::Response.new(status: 200, body: JSON.generate(pages.shift), headers: {})
+    end
+    client = Paymos::Client.new(api_key: 'pk', api_secret: 'sk', max_retries: 0, transport:)
+
+    seen = []
+    assert_raises(Paymos::Error) { client.invoices.each(max_pages: 10) { |item| seen << item.invoice_id } }
+    assert_equal %w[one two three], seen
+    assert_equal 3, requested.length
+  end
+
   private
 
   def invoice_json(invoice_id: 'inv_1')

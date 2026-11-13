@@ -66,7 +66,6 @@ outcome. Creation returns 201 and an identical replay returns 200; both yield a
 `Paymos::ConflictError` (409). Missing or foreign refund IDs raise
 `Paymos::NotFoundError` (404). List periods use RFC 3339 timestamps, and
 `paymos.refunds.each` provides the same bounded cursor iteration as invoices.
-In sandbox, use `paymos.withdrawals.simulate_completion(refund.withdrawal_id)`,
 In sandbox, use `paymos.refunds.simulate(refund.withdrawal_id, status: 'completed')`,
 then read the refund again. Refunds have their own list and do not appear in the
 ordinary withdrawals list.
@@ -83,7 +82,7 @@ channel.networks.each do |rail|
 end
 
 feed = paymos.payment_channel_deposits.read(cursor: saved_cursor, limit: 100)
-feed.items.each { |deposit| credit(deposit) }
+feed.items.each { |deposit| credit_deposit(deposit) } # one credit per deposit.id, see below
 save_cursor(feed.next_cursor)
 ```
 
@@ -121,9 +120,39 @@ to get the same typed model the deposit feed returns:
 case event.event_type
 when "payment_channel.deposit.confirmed"
   deposit = Paymos::PaymentChannelDeposit.from(event.data)
-  credit(deposit.payment_channel_external_id, deposit.net) if deposit.is_final
+  credit_deposit(deposit) if deposit.is_final # once per deposit.id, shared with the feed
 end
 ```
+
+The feed and the deposit webhook report the same deposits, so both go through one
+`credit_deposit` keyed by the deposit's own `id` (`pcd_...`). A sketch with the `pg` gem
+(`credited_deposits.deposit_id` is the primary key):
+
+```ruby
+def credit_deposit(deposit)
+  return unless deposit.is_final && deposit.project_id == MY_PROJECT_ID && deposit.is_test == MY_IS_TEST
+
+  db.transaction do |tx|
+    # The insert and the balance update commit together or not at all. A second
+    # delivery, a second endpoint's copy, or a re-read feed page inserts nothing.
+    inserted = tx.exec_params(
+      'INSERT INTO credited_deposits (deposit_id, payer, amount) VALUES ($1, $2, $3::numeric) '       'ON CONFLICT (deposit_id) DO NOTHING',
+      [deposit.id, deposit.payment_channel_external_id, deposit.net]
+    )
+    if inserted.cmd_tuples == 1
+      tx.exec_params('UPDATE balances SET amount = amount + $1::numeric WHERE payer = $2',
+                     [deposit.net, deposit.payment_channel_external_id])
+    end
+  end
+end
+```
+
+`event.event_id` identifies one delivery, not one payment. Paymos creates a separate
+event, with its own `event_id`, for every webhook endpoint subscribed to the event, and
+every later event about the same invoice or deposit has its own `event_id` too. Store
+`event_id` to skip a redelivered request, but key money and fulfilment on the business
+identity: the invoice/order for invoice events, the deposit `id` for deposit events.
+Write that key in the same database transaction as the order or balance change.
 
 `confirming` and `reorged` are advisory and may arrive out of order — a `confirming`
 can land after the `confirmed` for the same deposit, and a `reorged` can be superseded

@@ -31,6 +31,8 @@ module Paymos
   end
   class AuthenticationError < ApiError
   end
+  class PermissionError < AuthenticationError
+  end
   class NotFoundError < ApiError
   end
   class ConflictError < ApiError
@@ -42,6 +44,28 @@ module Paymos
   class ServerError < ApiError
   end
   class UnavailableError < ServerError
+  end
+
+  module InvoiceStatus
+    AWAITING_CLIENT: "awaiting_client"
+    AWAITING_PAYMENT: "awaiting_payment"
+    CONFIRMING: "confirming"
+    UNDERPAID_WAITING: "underpaid_waiting"
+    PAID: "paid"
+    PAID_OVER: "paid_over"
+    UNDERPAID: "underpaid"
+    EXPIRED: "expired"
+    CANCELLED: "cancelled"
+  end
+
+  module WithdrawalStatus
+    CREATED: "created"
+    PENDING_REVIEW: "pending_review"
+    SIGNED: "signed"
+    CANCELLING: "cancelling"
+    COMPLETED: "completed"
+    FAILED: "failed"
+    CANCELLED: "cancelled"
   end
 
   class Model
@@ -96,6 +120,7 @@ module Paymos
     attr_reader updated_at: Integer
     attr_reader expires_at: Integer?
     attr_reader completed_at: Integer?
+    attr_reader paid_late_at: Integer?
   end
 
   class InvoiceListItem < Model
@@ -112,6 +137,7 @@ module Paymos
     attr_reader created_at: Integer
     attr_reader expires_at: Integer?
     attr_reader completed_at: Integer?
+    attr_reader paid_late_at: Integer?
   end
 
   class Withdrawal < Model
