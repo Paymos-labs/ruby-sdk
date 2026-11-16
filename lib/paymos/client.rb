@@ -211,7 +211,7 @@ module Paymos
 
   class Invoices < Resource
     def create(project_id:, amount:, currency:, external_order_id:, network: nil,
-               customer_fee_percent: nil, client_id: nil)
+               customer_fee_percent: nil, client_id: nil, products: nil)
       required_keywords(project_id:, amount:, currency:, external_order_id:)
       if !customer_fee_percent.nil? && !(customer_fee_percent.is_a?(Integer) && customer_fee_percent.between?(0, 100))
         raise ArgumentError, 'customer_fee_percent must be between 0 and 100'
@@ -219,6 +219,7 @@ module Paymos
 
       payload = { project_id:, amount:, currency:, external_order_id:, network:,
                   customer_fee_percent:, client_id: }.compact
+      payload[:products] = serialize_products(products) unless products.nil?
       Invoice.from(@client.request('POST', '/v1/invoices', payload:))
     end
 
@@ -260,6 +261,18 @@ module Paymos
     def required_keywords(**values)
       missing = values.select { |_name, value| !value.is_a?(String) || value.strip.empty? }.keys
       raise ArgumentError, "Required values are missing: #{missing.join(', ')}" unless missing.empty?
+    end
+
+    def serialize_products(products)
+      raise ArgumentError, 'products must be an array' unless products.is_a?(Array)
+
+      products.map do |item|
+        raise ArgumentError, 'products items must respond to to_h' unless item.respond_to?(:to_h)
+
+        item.to_h.transform_keys(&:to_sym).reject do |key, value|
+          %i[description image_url].include?(key) && value.nil?
+        end
+      end
     end
   end
 

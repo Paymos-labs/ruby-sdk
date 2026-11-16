@@ -79,9 +79,28 @@ module Paymos
     end
   end
 
+  class InvoiceProduct < Model
+    fields :title, :description, :image_url, :quantity, :unit_amount,
+           required: %i[title quantity unit_amount]
+
+    def to_h
+      super.reject { |key, value| %i[description image_url].include?(key) && value.nil? }
+    end
+  end
+
   class Order < Model
-    fields :external_id, :client_id, :amount, :currency, :network,
+    fields :external_id, :client_id, :amount, :currency, :network, :products,
            required: %i[external_id amount currency]
+
+    def self.from(value)
+      model = super
+      return model if model.products.nil?
+
+      raise Error, 'Paymos API order products must be an array' unless model.products.is_a?(Array)
+
+      products = model.products.map { |item| InvoiceProduct.from(item) }
+      new(**model.to_h, products: products)
+    end
   end
 
   class Transfer < Model

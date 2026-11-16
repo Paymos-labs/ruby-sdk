@@ -73,12 +73,23 @@ module Paymos
     def to_h: () -> Hash[Symbol, untyped]
   end
 
+  class InvoiceProduct < Model
+    attr_reader title: String
+    attr_reader description: String?
+    attr_reader image_url: String?
+    attr_reader quantity: Integer
+    attr_reader unit_amount: String
+
+    def initialize: (title: String, quantity: Integer, unit_amount: String, ?description: String?, ?image_url: String?) -> void
+  end
+
   class Order < Model
     attr_reader external_id: String
     attr_reader client_id: String?
     attr_reader amount: String
     attr_reader currency: String
     attr_reader network: String?
+    attr_reader products: Array[InvoiceProduct]?
   end
 
   class Transfer < Model
@@ -280,7 +291,7 @@ module Paymos
   end
 
   class Invoices
-    def create: (project_id: String, amount: String, currency: String, external_order_id: String, ?network: String?, ?customer_fee_percent: Integer?, ?client_id: String?) -> Invoice
+    def create: (project_id: String, amount: String, currency: String, external_order_id: String, ?network: String?, ?customer_fee_percent: Integer?, ?client_id: String?, ?products: Array[InvoiceProduct | Hash[Symbol | String, untyped]]?) -> Invoice
     def get: (String invoice_id) -> Invoice
     def list: (?limit: Integer?, ?cursor: String?, ?status: String | Array[String]?, ?external_order_id: String?, ?project_id: String?, ?created_from: Integer?, ?created_to: Integer?) -> Page[InvoiceListItem]
     def cancel: (String invoice_id, reason: String) -> Invoice
