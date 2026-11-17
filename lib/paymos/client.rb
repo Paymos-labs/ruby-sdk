@@ -270,7 +270,7 @@ module Paymos
         raise ArgumentError, 'products items must respond to to_h' unless item.respond_to?(:to_h)
 
         item.to_h.transform_keys(&:to_sym).reject do |key, value|
-          %i[description image_url].include?(key) && value.nil?
+          key == :description && value.nil?
         end
       end
     end

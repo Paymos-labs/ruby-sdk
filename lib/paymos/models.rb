@@ -80,11 +80,11 @@ module Paymos
   end
 
   class InvoiceProduct < Model
-    fields :title, :description, :image_url, :quantity, :unit_amount,
+    fields :title, :description, :quantity, :unit_amount,
            required: %i[title quantity unit_amount]
 
     def to_h
-      super.reject { |key, value| %i[description image_url].include?(key) && value.nil? }
+      super.reject { |key, value| key == :description && value.nil? }
     end
   end
 

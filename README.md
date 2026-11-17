@@ -31,14 +31,13 @@ balances = paymos.balances.get
 
 ### Product line items (`products[]`)
 
-Pass optional `products:` (`1..50` `Paymos::InvoiceProduct` instances or Hashes) to display purchase context on hosted checkout, or omit `products:` / pass `products: nil` for a compatible `amount-only` invoice. Each `Paymos::InvoiceProduct` requires `title:` (<= 200 Unicode scalar values), positive integer `quantity:`, and decimal string `unit_amount:` (in the invoice currency); `description:` (plain text, <= 2000 scalars) and `image_url:` (HTTPS URL, <= 2048 scalars) are optional keywords and are omitted on the wire when `nil`.
+Pass optional `products:` (`1..50` `Paymos::InvoiceProduct` instances or Hashes) to display purchase context on hosted checkout, or omit `products:` / pass `products: nil` for a compatible `amount-only` invoice. Each `Paymos::InvoiceProduct` requires `title:` (<= 200 Unicode scalar values), positive integer `quantity:`, and decimal string `unit_amount:` (in the invoice currency); `description:` (plain text, <= 2000 scalars) is an optional keyword and is omitted on the wire when `nil`.
 
 ```ruby
-# 1-item invoice with optional description and image_url
+# 1-item invoice with optional description
 studio_pro = Paymos::InvoiceProduct.new(
   title: "Studio Pro",
   description: "One-month access",
-  image_url: "https://shop.example/images/studio-pro.webp",
   quantity: 2,
   unit_amount: "24.50"
 )
@@ -50,7 +49,7 @@ single_invoice = paymos.invoices.create(
   products: [studio_pro]
 )
 
-# Multi-item cart including a minimal 3-field item (no description / image_url)
+# Multi-item cart including a minimal 3-field item (no description)
 cart_invoice = paymos.invoices.create(
   project_id: "prj_...",
   amount: "59.00",
@@ -69,7 +68,7 @@ end
 
 - **Authoritative `amount`:** `amount` is the exact order total and is never recomputed from `sum(quantity * unit_amount)`.
 - **First-success replay:** the first successful create freezes `order.products` on the invoice. Replaying the same `external_order_id` with unchanged `(amount, currency, network)` returns HTTP 200 with the original `Paymos::Invoice` and `order.products`, even if `products` changed; changing `(amount, currency, network)` raises `Paymos::ConflictError` (`409 invoice_idempotency_conflict`). Legacy and `amount-only` invoices return `order.products == nil`.
-- **Image/product fallback & webhooks:** invoice creation stores `image_url` without fetching it server-side; if the buyer's browser fails to load an image or an item omits `description`/`image_url`, checkout hides only the missing media/description and keeps payment active. Signed invoice webhooks omit `products`.
+- **Webhooks:** signed invoice webhooks omit `products`.
 
 Responses are immutable Ruby objects with documented RBS signatures (`sig/paymos.rbs`); request
 keywords remain idiomatic `snake_case` and are converted directly to the Paymos

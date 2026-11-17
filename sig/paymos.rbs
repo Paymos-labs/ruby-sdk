@@ -76,11 +76,10 @@ module Paymos
   class InvoiceProduct < Model
     attr_reader title: String
     attr_reader description: String?
-    attr_reader image_url: String?
     attr_reader quantity: Integer
     attr_reader unit_amount: String
 
-    def initialize: (title: String, quantity: Integer, unit_amount: String, ?description: String?, ?image_url: String?) -> void
+    def initialize: (title: String, quantity: Integer, unit_amount: String, ?description: String?) -> void
   end
 
   class Order < Model

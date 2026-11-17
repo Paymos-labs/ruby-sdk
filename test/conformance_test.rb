@@ -313,20 +313,19 @@ class InvoiceProductsConformanceTest < Minitest::Test
   RBS = File.read(File.expand_path('../sig/paymos.rbs', __dir__))
 
   def test_invoice_product_to_h_omits_nil_optional_keys
+    assert_equal %i[title description quantity unit_amount], Paymos::InvoiceProduct.field_names
     minimal = Paymos::InvoiceProduct.new(title: 'Priority Support', quantity: 1, unit_amount: '12.00')
     assert_equal({ title: 'Priority Support', quantity: 1, unit_amount: '12.00' }, minimal.to_h)
     assert_nil minimal.description
-    assert_nil minimal.image_url
 
     explicit_nil = Paymos::InvoiceProduct.new(
-      title: 'Priority Support', description: nil, image_url: nil, quantity: 1, unit_amount: '12.00'
+      title: 'Priority Support', description: nil, quantity: 1, unit_amount: '12.00'
     )
     assert_equal({ title: 'Priority Support', quantity: 1, unit_amount: '12.00' }, explicit_nil.to_h)
 
     full = Paymos::InvoiceProduct.new(
       title: 'Studio Pro',
       description: 'One-month access',
-      image_url: 'https://shop.example/images/studio-pro.webp',
       quantity: 2,
       unit_amount: '24.50'
     )
@@ -334,7 +333,6 @@ class InvoiceProductsConformanceTest < Minitest::Test
       {
         title: 'Studio Pro',
         description: 'One-month access',
-        image_url: 'https://shop.example/images/studio-pro.webp',
         quantity: 2,
         unit_amount: '24.50'
       },
@@ -361,7 +359,6 @@ class InvoiceProductsConformanceTest < Minitest::Test
     single_product = Paymos::InvoiceProduct.new(
       title: 'Studio Pro',
       description: 'One-month access',
-      image_url: 'https://shop.example/images/studio-pro.webp',
       quantity: 2,
       unit_amount: '24.50'
     )
@@ -374,6 +371,8 @@ class InvoiceProductsConformanceTest < Minitest::Test
       products: [single_product]
     )
     assert_equal single_body, captured_bodies[0]
+    assert_equal %w[description quantity title unit_amount], captured_bodies[0].fetch('products')[0].keys.sort
+    refute captured_bodies[0].fetch('products')[0].key?('image_url')
     assert_equal 1, single_invoice.order.products.length
     assert_instance_of Paymos::InvoiceProduct, single_invoice.order.products[0]
     assert_equal single_product.to_h, single_invoice.order.products[0].to_h
@@ -393,7 +392,6 @@ class InvoiceProductsConformanceTest < Minitest::Test
     assert_equal %w[quantity title unit_amount], captured_bodies[1].fetch('products')[1].keys.sort
     assert_equal 2, multi_invoice.order.products.length
     assert_nil multi_invoice.order.products[1].description
-    assert_nil multi_invoice.order.products[1].image_url
     assert_equal '12.00', multi_invoice.order.products[1].unit_amount
 
     client.invoices.create(
@@ -403,7 +401,7 @@ class InvoiceProductsConformanceTest < Minitest::Test
       external_order_id: multi_body.fetch('external_order_id'),
       products: [
         single_product,
-        { title: 'Priority Support', description: nil, image_url: nil, quantity: 1, unit_amount: '12.00' }
+        { title: 'Priority Support', description: nil, quantity: 1, unit_amount: '12.00' }
       ]
     )
     assert_equal multi_body, captured_bodies[2]
@@ -448,10 +446,10 @@ class InvoiceProductsConformanceTest < Minitest::Test
     refute_nil product_block
     assert_includes product_block, 'attr_reader title: String'
     assert_includes product_block, 'attr_reader description: String?'
-    assert_includes product_block, 'attr_reader image_url: String?'
+    refute_includes product_block, 'image_url'
     assert_includes product_block, 'attr_reader quantity: Integer'
     assert_includes product_block, 'attr_reader unit_amount: String'
-    assert_includes product_block, '?description: String?, ?image_url: String?'
+    assert_includes product_block, '?description: String?'
 
     order_block = RBS.match(/^  class Order < Model\n(.*?)^  end$/m)&.[](1)
     refute_nil order_block
